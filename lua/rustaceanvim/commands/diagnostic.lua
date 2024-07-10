@@ -295,6 +295,16 @@ function M.render_diagnostic()
   table.insert(float_preview_lines, 1, '1. Open in split')
   vim.schedule(function()
     close_hover()
+    -- local bufnr = vim.api.nvim_create_buf(false, false)
+    -- local winnr = vim.api.nvim_open_win(bufnr, true, {
+    --   style = 'minimal',
+    --   row = 1,
+    --   col = 10,
+    --   relative = 'cursor',
+    --   border = 'rounded',
+    --   width = 100,
+    --   height = 20,
+    -- })
     local bufnr, winnr = vim.lsp.util.open_floating_preview(
       float_preview_lines,
       '',
@@ -305,11 +315,30 @@ function M.render_diagnostic()
         close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
       })
     )
+    local chanid = vim.api.nvim_open_term(bufnr, {})
+    local id = vim.api.nvim_create_autocmd('BufEnter', {
+      callback = function(args)
+        -- __AUTO_GENERATED_PRINT_VAR_START__
+        print([==[M.render_diagnostic#function#function args:]==], vim.inspect(args)) -- __AUTO_GENERATED_PRINT_VAR_END__
+        if args.buf == bufnr then
+          FeedKeys([[<c-\><c-n>]], 'n')
+        end
+      end,
+    })
+    vim.api.nvim_create_autocmd('WinClosed', {
+      once = true,
+      callback = function(args)
+        local winid = tonumber(args.match)
+        vim.api.nvim_del_autocmd(id)
+      end,
+    })
+    vim.api.nvim_chan_send(chanid, rendered_diagnostic)
     _window_state.float_winnr = winnr
     set_close_keymaps(bufnr)
     set_open_split_keymap(bufnr, winnr, lines)
     if config.tools.float_win_config.auto_focus then
       vim.api.nvim_set_current_win(winnr)
+      FeedKeys([[<c-\><c-n>]], 'n')
     end
   end)
 end
