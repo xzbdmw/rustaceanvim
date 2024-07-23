@@ -16,8 +16,8 @@ local _window_state = {
 
 ---@param bufnr integer
 ---@param winnr integer
----@param lines string
-local function set_open_split_keymap(bufnr, winnr, lines)
+---@param render_fn function
+local function set_split_open_keymap(bufnr, winnr, render_fn)
   local function open_split()
     -- check if a buffer with the latest id is already open, if it is then
     -- delete it and continue
@@ -27,12 +27,9 @@ local function set_open_split_keymap(bufnr, winnr, lines)
     _window_state.latest_scratch_buf_id = vim.api.nvim_create_buf(false, true) -- not listed and scratch
 
     -- split the window to create a new buffer and set it to our window
-    ui.split(false, _window_state.latest_scratch_buf_id)
-
-    -- write the expansion content to the buffer
-    local chanid = vim.api.nvim_open_term(_window_state.latest_scratch_buf_id, {})
-
-    vim.api.nvim_chan_send(chanid, vim.trim(lines))
+    local vsplit = config.tools.float_win_config.open_split == 'vertical'
+    ui.split(vsplit, _window_state.latest_scratch_buf_id)
+    render_fn()
   end
   vim.keymap.set('n', '<CR>', function()
     local line = vim.api.nvim_win_get_cursor(winnr)[1]
@@ -128,7 +125,12 @@ function M.explain_error()
       )
       _window_state.float_winnr = winnr
       set_close_keymaps(bufnr)
-      set_open_split_keymap(bufnr, winnr, markdown_lines)
+      set_split_open_keymap(bufnr, winnr, function()
+        -- set filetype to rust for syntax highlighting
+        vim.bo[_window_state.latest_scratch_buf_id].filetype = 'rust'
+        -- write the expansion content to the buffer
+        vim.api.nvim_buf_set_lines(_window_state.latest_scratch_buf_id, 0, 0, false, markdown_lines)
+      end)
 
       if config.tools.float_win_config.auto_focus then
         vim.api.nvim_set_current_win(winnr)
@@ -141,6 +143,76 @@ function M.explain_error()
   vim.api.nvim_win_set_cursor(win_id, { diagnostic.lnum + 1, diagnostic.col })
   -- Open folds under the cursor
   vim.cmd('normal! zv')
+  compat.system({ rustc, '--explain', tostring(diagnostic.code) }, nil, vim.schedule_wrap(handler))
+end
+
+function M.explain_error_current_line()
+  if vim.fn.executable(rustc) ~= 1 then
+    vim.notify('rustc is needed to explain errors.', vim.log.levels.ERROR)
+    return
+  end
+
+  local win_id = vim.api.nvim_get_current_win()
+  local cursor_position = vim.api.nvim_win_get_cursor(win_id)
+
+  -- get matching diagnostics from current line
+  local diagnostics = vim.tbl_filter(
+    function(diagnostic)
+      return diagnostic.code ~= nil
+        and diagnostic.source == 'rustc'
+        and diagnostic.severity == vim.diagnostic.severity.ERROR
+    end,
+    vim.diagnostic.get(0, {
+      lnum = cursor_position[1] - 1,
+    })
+  )
+
+  -- no matching diagnostics on current line
+  if #diagnostics == 0 then
+    vim.notify('No explainable errors found.', vim.log.levels.INFO)
+    return
+  end
+
+  local diagnostic = diagnostics[1]
+
+  ---@param sc vim.SystemCompleted
+  local function handler(sc)
+    if sc.code ~= 0 or not sc.stdout then
+      vim.notify('Error calling rustc --explain' .. (sc.stderr and ': ' .. sc.stderr or ''), vim.log.levels.ERROR)
+      return
+    end
+    local output = sc.stdout:gsub('```', '```rust', 1)
+    local markdown_lines = vim.lsp.util.convert_input_to_markdown_lines(output, {})
+    local float_preview_lines = vim.deepcopy(markdown_lines)
+    table.insert(float_preview_lines, 1, '---')
+    table.insert(float_preview_lines, 1, '1. Open in split')
+    vim.schedule(function()
+      close_hover()
+      local bufnr, winnr = vim.lsp.util.open_floating_preview(
+        float_preview_lines,
+        'markdown',
+        vim.tbl_extend('keep', config.tools.float_win_config, {
+          focus = false,
+          focusable = true,
+          focus_id = 'rustc-explain-error',
+          close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
+        })
+      )
+      _window_state.float_winnr = winnr
+      set_close_keymaps(bufnr)
+      set_split_open_keymap(bufnr, winnr, function()
+        -- set filetype to rust for syntax highlighting
+        vim.bo[_window_state.latest_scratch_buf_id].filetype = 'rust'
+        -- write the expansion content to the buffer
+        vim.api.nvim_buf_set_lines(_window_state.latest_scratch_buf_id, 0, 0, false, markdown_lines)
+      end)
+
+      if config.tools.float_win_config.auto_focus then
+        vim.api.nvim_set_current_win(winnr)
+      end
+    end)
+  end
+
   compat.system({ rustc, '--explain', tostring(diagnostic.code) }, nil, vim.schedule_wrap(handler))
 end
 
@@ -193,8 +265,8 @@ local function render_ansi_code_diagnostic(rendered_diagnostic)
   local lines =
     vim.split(rendered_diagnostic:gsub('[\27\155][][()#;?%d]*[A-PRZcf-ntqry=><~]', ''), '\n', { trimempty = true })
   local float_preview_lines = vim.deepcopy(lines)
-  table.insert(float_preview_lines, 1, '---')
-  table.insert(float_preview_lines, 1, '1. Open in split')
+  -- table.insert(float_preview_lines, 1, '---')
+  -- table.insert(float_preview_lines, 1, '1. Open in split')
   vim.schedule(function()
     close_hover()
     local bufnr, winnr = vim.lsp.util.open_floating_preview(
@@ -226,10 +298,13 @@ local function render_ansi_code_diagnostic(rendered_diagnostic)
         vim.api.nvim_del_autocmd(autocmd_id)
       end,
     })
-    vim.api.nvim_chan_send(chanid, vim.trim('1. Open in split\r\n' .. '---\r\n' .. rendered_diagnostic))
+    vim.api.nvim_chan_send(chanid, vim.trim(rendered_diagnostic))
     _window_state.float_winnr = winnr
     set_close_keymaps(bufnr)
-    set_open_split_keymap(bufnr, winnr, rendered_diagnostic)
+    set_split_open_keymap(bufnr, winnr, function()
+      local chan_id = vim.api.nvim_open_term(_window_state.latest_scratch_buf_id, {})
+      vim.api.nvim_chan_send(chan_id, vim.trim(rendered_diagnostic))
+    end)
     if config.tools.float_win_config.auto_focus then
       vim.api.nvim_set_current_win(winnr)
       vim.api.nvim_feedkeys(
