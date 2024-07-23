@@ -50,22 +50,14 @@ function cargo.get_root_dir(file_name)
       cmd[#cmd + 1] = joinpath(cargo_crate_dir, 'Cargo.toml')
     end
     local cargo_metadata = ''
-    local cm = vim.fn.jobstart(cmd, {
-      on_stdout = function(_, d, _)
-        cargo_metadata = table.concat(d, '\n')
-      end,
-      stdout_buffered = true,
+
+    local b = vim.system(cmd, {
       cwd = path,
+      text = true,
     })
-    if cm > 0 then
-      cm = vim.fn.jobwait({ cm })[1]
-    else
-      cm = -1
-    end
-    if cm == 0 then
-      cargo_workspace_dir = vim.fn.json_decode(cargo_metadata)['workspace_root']
-      ---@cast cargo_workspace_dir string
-    end
+
+    cargo_metadata = b:wait().stdout
+    cargo_workspace_dir = vim.fn.json_decode(cargo_metadata)['workspace_root']
   end
   return cargo_workspace_dir
     or cargo_crate_dir
