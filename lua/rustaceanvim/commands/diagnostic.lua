@@ -16,7 +16,7 @@ local _window_state = {
 
 ---@param bufnr integer
 ---@param winnr integer
----@param lines string[]
+---@param lines string
 local function set_open_split_keymap(bufnr, winnr, lines)
   local function open_split()
     -- check if a buffer with the latest id is already open, if it is then
@@ -30,10 +30,10 @@ local function set_open_split_keymap(bufnr, winnr, lines)
     local vsplit = config.tools.float_win_config.open_split == 'vertical'
     ui.split(vsplit, _window_state.latest_scratch_buf_id)
 
-    -- set filetype to rust for syntax highlighting
-    vim.bo[_window_state.latest_scratch_buf_id].filetype = 'rust'
     -- write the expansion content to the buffer
-    vim.api.nvim_buf_set_lines(_window_state.latest_scratch_buf_id, 0, 0, false, lines)
+    local chanid = vim.api.nvim_open_term(_window_state.latest_scratch_buf_id, {})
+
+    vim.api.nvim_chan_send(chanid, vim.trim(lines))
   end
   vim.keymap.set('n', '<CR>', function()
     local line = vim.api.nvim_win_get_cursor(winnr)[1]
@@ -234,6 +234,75 @@ local function get_rendered_diagnostic(diagnostic)
   end
 end
 
+---@param rendered_diagnostic string
+function M.render_ansi_code_diagnostic(rendered_diagnostic)
+  local lines =
+    vim.split(rendered_diagnostic:gsub('[\27\155][][()#;?%d]*[A-PRZcf-ntqry=><~]', ''), '\n', { trimempty = true })
+  local float_preview_lines = vim.deepcopy(lines)
+  table.insert(float_preview_lines, 1, '---')
+  table.insert(float_preview_lines, 1, '1. Open in split')
+  vim.schedule(function()
+    close_hover()
+    local bufnr, winnr = vim.lsp.util.open_floating_preview(
+      float_preview_lines,
+      '',
+      vim.tbl_extend('keep', config.tools.float_win_config, {
+        focus = false,
+        focusable = true,
+        focus_id = 'ra-render-diagnostic',
+        close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
+      })
+    )
+    local autocmd_id = vim.api.nvim_create_autocmd('WinEnter', {
+      callback = function(args)
+        if args.buf == bufnr then
+          vim.api.nvim_feedkeys(
+            vim.api.nvim_replace_termcodes(
+              [[<c-\><c-n>]] .. '<cmd>lua vim.api.nvim_win_set_cursor(' .. winnr .. ',{1,0})<CR>',
+              true,
+              false,
+              true
+            ),
+            'n',
+            true
+          )
+        end
+      end,
+    })
+    local chanid = vim.api.nvim_open_term(bufnr, {})
+    vim.api.nvim_create_autocmd('WinClosed', {
+      once = true,
+      pattern = tostring(winnr),
+      callback = function()
+        vim.api.nvim_del_autocmd(autocmd_id)
+      end,
+    })
+    vim.api.nvim_chan_send(chanid, vim.trim('1. Open in split\r\n' .. '---\r\n' .. rendered_diagnostic))
+    _window_state.float_winnr = winnr
+    set_close_keymaps(bufnr)
+    set_open_split_keymap(bufnr, winnr, rendered_diagnostic)
+    if config.tools.float_win_config.auto_focus then
+      vim.api.nvim_set_current_win(winnr)
+      vim.api.nvim_feedkeys(
+        vim.api.nvim_replace_termcodes(
+          '<cmd>lua vim.api.nvim_set_current_win('
+            .. winnr
+            .. ')<CR>'
+            .. [[<c-\><c-n>]]
+            .. '<cmd>lua vim.api.nvim_win_set_cursor('
+            .. winnr
+            .. ',{1,0})<CR>',
+          true,
+          false,
+          true
+        ),
+        'n',
+        true
+      )
+    end
+  end)
+end
+
 function M.render_diagnostic()
   local diagnostics = vim.tbl_filter(function(diagnostic)
     return get_rendered_diagnostic(diagnostic) ~= nil
@@ -289,58 +358,7 @@ function M.render_diagnostic()
   -- Open folds under the cursor
   vim.cmd('normal! zv')
 
-  local lines = vim.split(rendered_diagnostic, '\n')
-  local float_preview_lines = vim.deepcopy(lines)
-  table.insert(float_preview_lines, 1, '---')
-  table.insert(float_preview_lines, 1, '1. Open in split')
-  vim.schedule(function()
-    close_hover()
-    -- local bufnr = vim.api.nvim_create_buf(false, false)
-    -- local winnr = vim.api.nvim_open_win(bufnr, true, {
-    --   style = 'minimal',
-    --   row = 1,
-    --   col = 10,
-    --   relative = 'cursor',
-    --   border = 'rounded',
-    --   width = 100,
-    --   height = 20,
-    -- })
-    local bufnr, winnr = vim.lsp.util.open_floating_preview(
-      float_preview_lines,
-      '',
-      vim.tbl_extend('keep', config.tools.float_win_config, {
-        focus = false,
-        focusable = true,
-        focus_id = 'ra-render-diagnostic',
-        close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
-      })
-    )
-    local chanid = vim.api.nvim_open_term(bufnr, {})
-    local id = vim.api.nvim_create_autocmd('BufEnter', {
-      callback = function(args)
-        -- __AUTO_GENERATED_PRINT_VAR_START__
-        print([==[M.render_diagnostic#function#function args:]==], vim.inspect(args)) -- __AUTO_GENERATED_PRINT_VAR_END__
-        if args.buf == bufnr then
-          FeedKeys([[<c-\><c-n>]], 'n')
-        end
-      end,
-    })
-    vim.api.nvim_create_autocmd('WinClosed', {
-      once = true,
-      callback = function(args)
-        local winid = tonumber(args.match)
-        vim.api.nvim_del_autocmd(id)
-      end,
-    })
-    vim.api.nvim_chan_send(chanid, rendered_diagnostic)
-    _window_state.float_winnr = winnr
-    set_close_keymaps(bufnr)
-    set_open_split_keymap(bufnr, winnr, lines)
-    if config.tools.float_win_config.auto_focus then
-      vim.api.nvim_set_current_win(winnr)
-      FeedKeys([[<c-\><c-n>]], 'n')
-    end
-  end)
+  M.render_ansi_code_diagnostic(rendered_diagnostic)
 end
 
 function M.render_diagnostic_current_line()
@@ -367,29 +385,7 @@ function M.render_diagnostic_current_line()
   end
 
   local rendered_diagnostic = rendered_diagnostics[1]
-  local lines = vim.split(rendered_diagnostic, '\n')
-  local float_preview_lines = vim.deepcopy(lines)
-  table.insert(float_preview_lines, 1, '---')
-  table.insert(float_preview_lines, 1, '1. Open in split')
-  vim.schedule(function()
-    close_hover()
-    local bufnr, winnr = vim.lsp.util.open_floating_preview(
-      float_preview_lines,
-      '',
-      vim.tbl_extend('keep', config.tools.float_win_config, {
-        focus = false,
-        focusable = true,
-        focus_id = 'ra-render-diagnostic',
-        close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
-      })
-    )
-    _window_state.float_winnr = winnr
-    set_close_keymaps(bufnr)
-    set_open_split_keymap(bufnr, winnr, lines)
-    if config.tools.float_win_config.auto_focus then
-      vim.api.nvim_set_current_win(winnr)
-    end
-  end)
+  M.render_ansi_code_diagnostic(rendered_diagnostic)
 end
 
 return M
