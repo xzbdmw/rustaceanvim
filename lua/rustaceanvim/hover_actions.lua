@@ -98,7 +98,7 @@ function M.handler(_, result, ctx)
       close_events = { 'CursorMoved', 'BufHidden', 'InsertCharPre' },
     })
   )
-
+  vim.b[bufnr].rust = true
   if win_opt.auto_focus then
     vim.api.nvim_set_current_win(winnr)
   end
