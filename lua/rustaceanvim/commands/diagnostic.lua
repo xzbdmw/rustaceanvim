@@ -32,10 +32,6 @@ local function set_split_open_keymap(bufnr, winnr, render_fn)
     render_fn()
   end
   vim.keymap.set('n', '<CR>', function()
-    local line = vim.api.nvim_win_get_cursor(winnr)[1]
-    if line > 1 then
-      return
-    end
     open_split()
   end, { buffer = bufnr, noremap = true, silent = true })
 end

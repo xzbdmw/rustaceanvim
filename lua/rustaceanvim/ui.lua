@@ -21,7 +21,10 @@ function M.split(vertical, bufnr)
 
   vim.cmd(cmd)
   local win = vim.api.nvim_get_current_win()
+  vim.wo[win].number = false
   vim.api.nvim_win_set_buf(win, bufnr)
+  vim.keymap.set('n', 'q', '<cmd>close<CR>', { buffer = true })
+  vim.b.rust_diagnostic = true
 end
 
 ---@param vertical boolean
