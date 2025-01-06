@@ -29,43 +29,44 @@ end
 ---@param file_name string
 ---@return string | nil root_dir
 function cargo.get_root_dir(file_name)
-  local reuse_active = get_mb_active_client_root(file_name)
-  if reuse_active then
-    return reuse_active
-  end
-  local path = file_name:find('%.rs$') and vim.fs.dirname(file_name) or file_name
-  if not path then
-    return nil
-  end
-  ---@diagnostic disable-next-line: missing-fields
-  local cargo_crate_dir = vim.fs.dirname(vim.fs.find({ 'Cargo.toml' }, {
-    upward = true,
-    path = path,
-  })[1])
-  local cargo_workspace_dir = nil
-  if vim.fn.executable('cargo') == 1 then
-    local cmd = { 'cargo', 'metadata', '--no-deps', '--format-version', '1' }
-    if cargo_crate_dir ~= nil then
-      cmd[#cmd + 1] = '--manifest-path'
-      cmd[#cmd + 1] = joinpath(cargo_crate_dir, 'Cargo.toml')
-    end
-    local cargo_metadata = ''
-
-    local b = vim.system(cmd, {
-      cwd = path,
-      text = true,
-    })
-
-    cargo_metadata = b:wait().stdout
-    cargo_workspace_dir = vim.fn.json_decode(cargo_metadata)['workspace_root']
-  end
-  return cargo_workspace_dir
-    or cargo_crate_dir
-    ---@diagnostic disable-next-line: missing-fields
-    or vim.fs.dirname(vim.fs.find({ 'rust-project.json' }, {
-      upward = true,
-      path = path,
-    })[1])
+  return vim.uv.cwd()
+  -- local reuse_active = get_mb_active_client_root(file_name)
+  -- if reuse_active then
+  --   return reuse_active
+  -- end
+  -- local path = file_name:find('%.rs$') and vim.fs.dirname(file_name) or file_name
+  -- if not path then
+  --   return nil
+  -- end
+  -- ---@diagnostic disable-next-line: missing-fields
+  -- local cargo_crate_dir = vim.fs.dirname(vim.fs.find({ 'Cargo.toml' }, {
+  --   upward = true,
+  --   path = path,
+  -- })[1])
+  -- local cargo_workspace_dir = nil
+  -- if vim.fn.executable('cargo') == 1 then
+  --   local cmd = { 'cargo', 'metadata', '--no-deps', '--format-version', '1' }
+  --   if cargo_crate_dir ~= nil then
+  --     cmd[#cmd + 1] = '--manifest-path'
+  --     cmd[#cmd + 1] = joinpath(cargo_crate_dir, 'Cargo.toml')
+  --   end
+  --   local cargo_metadata = ''
+  --
+  --   local b = vim.system(cmd, {
+  --     cwd = path,
+  --     text = true,
+  --   })
+  --
+  --   cargo_metadata = b:wait().stdout
+  --   cargo_workspace_dir = vim.fn.json_decode(cargo_metadata)['workspace_root']
+  -- end
+  -- return cargo_workspace_dir
+  --   or cargo_crate_dir
+  --   ---@diagnostic disable-next-line: missing-fields
+  --   or vim.fs.dirname(vim.fs.find({ 'rust-project.json' }, {
+  --     upward = true,
+  --     path = path,
+  --   })[1])
 end
 
 return cargo

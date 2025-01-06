@@ -174,7 +174,7 @@ M.start = function(bufnr)
     end
   end
 
-  return vim.lsp.start(lsp_start_config)
+  return vim.lsp.start(lsp_start_config, { bufnr = bufnr })
 end
 
 ---Stop the LSP client.
