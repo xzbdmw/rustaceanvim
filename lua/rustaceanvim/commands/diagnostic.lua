@@ -324,9 +324,7 @@ local function render_ansi_code_diagnostic(rendered_diagnostic)
 end
 
 function M.render_diagnostic()
-  local diagnostics = vim.tbl_filter(function(diagnostic)
-    return get_rendered_diagnostic(diagnostic) ~= nil
-  end, vim.diagnostic.get(0, {}))
+  local diagnostics = vim.diagnostic.get(0, {})
   if #diagnostics == 0 then
     vim.notify('No renderable diagnostics found.', vim.log.levels.INFO)
     return
@@ -347,6 +345,10 @@ function M.render_diagnostic()
       break
     end
     rendered_diagnostic = get_rendered_diagnostic(diagnostic)
+    if rendered_diagnostic == nil then
+      FeedKeys(']d', 'm')
+      return
+    end
     local pos = { diagnostic.lnum, diagnostic.col }
     pos_id = pos[1] + pos[2]
     opts.cursor_position = pos

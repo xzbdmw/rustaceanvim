@@ -174,6 +174,7 @@ M.start = function(bufnr)
     end
   end
 
+  -- lsp_start_config.cmd = { '/Users/xzb/Project/Rust/rust-analyzer/target/release/rust-analyzer' }
   return vim.lsp.start(lsp_start_config, { bufnr = bufnr })
 end
 

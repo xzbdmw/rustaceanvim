@@ -51,65 +51,8 @@ if type(auto_attach) == 'function' then
 end
 
 if auto_attach then
-  local bufnr = vim.api.nvim_get_current_buf()
-  local timer = vim.loop.new_timer()
-  local has_start = false
-
+  local buf = vim.api.nvim_get_current_buf()
   vim.defer_fn(function()
-    local is_active = timer:is_active()
-    if is_active then
-      vim.notify("Timer haven't been closed!", vim.log.levels.ERROR)
-    end
-  end, 2000)
-
-  local timout = function(opts)
-    local force = opts.force
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      if timer:is_active() then
-        timer:close()
-      end
-      return
-    end
-    if not force and (has_start or not vim.b[bufnr].ts_parse_over) then
-      return
-    end
-    if timer:is_active() then
-      timer:close()
-      -- haven't start
-      has_start = true
-      require('rustaceanvim.lsp').start(bufnr)
-    end
-  end
-
-  vim.defer_fn(function()
-    timout { force = false }
-  end, 100)
-  vim.defer_fn(function()
-    timout { force = true }
-  end, 1000)
-
-  local col = vim.fn.screencol()
-  local row = vim.fn.screenrow()
-  timer:start(5, 2, function()
-    vim.schedule(function()
-      if not vim.api.nvim_buf_is_valid(bufnr) then
-        if timer:is_active() then
-          timer:close()
-        end
-        return
-      end
-      if has_start or not vim.b[bufnr].ts_parse_over then
-        return
-      end
-      local new_col = vim.fn.screencol()
-      local new_row = vim.fn.screenrow()
-      if new_row ~= row and new_col ~= col then
-        if timer:is_active() then
-          timer:close()
-          has_start = true
-          require('rustaceanvim.lsp').start(bufnr)
-        end
-      end
-    end)
-  end)
+    require('rustaceanvim.lsp').start(buf)
+  end, 20)
 end
